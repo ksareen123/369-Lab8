@@ -1,0 +1,186 @@
+//ESET 369
+//LAB 8 PART A, Jonathan Venegas and Krish Sareen
+
+#include <msp430.h>
+ int main(void){
+    WDTCTL = WDTPW | WDTHOLD;   // hold the watchdog timer
+    PM5CTL0 &= ~LOCKLPM5;  // clear LOCKLPM5 bit
+
+    //setup GPIO pins
+    P8DIR &= ~0x0F;
+    P1DIR |= BIT0; //set P1.0 to output
+    P4DIR |= BIT7; //set P4.7 to output
+    P4OUT |= BIT7; //set pin to high
+
+    P1DIR |= 0x0C; // set P1.5->P1.2 to output
+    // 00001100
+
+    // set P1.5->P1.2 to alt function for timers
+    P1SEL1 &= ~0x0C;
+    P1SEL0 |= 0x0C;
+
+    TA1CTL = TASSEL_2 | MC_1 | TACLR; //TA1CTL
+    TA1CCR0 = 2000; //initial setup value
+
+    TB0CTL = TBSSEL_2 | MC_1 | TBCLR; //TB0CTL
+    TB0CCR0 = 2000; //initial setup value
+
+
+    //main loop
+    while(1) {
+        if(P8IN == 0x0D) {// down
+            TA1CCR1 = 0;
+            TA1CCTL1 = OUTMOD_7; // mode 7
+            TA1CCR2 = 0;
+            TA1CCTL2 = OUTMOD_7; // mode 7
+
+            TB0CCR1 = 0; // TA1CCR1 value
+            TB0CCTL1 = OUTMOD_7; // mode 7
+            TB0CCR2 = 0; // TA1CCR2 value
+            TB0CCTL2 = OUTMOD_7; // mode 7
+        }
+
+        else if(P8IN == 0x0B) //Left
+        {
+            TA1CCR1 = 2000; // TA1CCR0 value
+            TA1CCTL1 = OUTMOD_7; // mode 7
+            TA1CCR2 = 0;
+            TA1CCTL2 = OUTMOD_7; // mode 7
+
+            TB0CCR1 = 2000; // TA1CCR1 value
+            TB0CCTL1 = OUTMOD_7; // mode 7
+            TB0CCR2 = 0; // TA1CCR2 value
+            TB0CCTL2 = OUTMOD_7; // mode 7
+        }
+
+        else if(P8IN == 0x07) //right
+        {
+            TA1CCR1 = 0; // TA1CCR0 value
+            TA1CCTL1 = OUTMOD_7; // mode 7
+            TA1CCR2 = 2000;
+            TA1CCTL2 = OUTMOD_7; // mode 7
+
+            TB0CCR1 = 0; // TA1CCR1 value
+            TB0CCTL1 = OUTMOD_7; // mode 7
+            TB0CCR2 = 2000; // TA1CCR2 value
+            TB0CCTL2 = OUTMOD_7; // mode 7
+        }
+
+        else if (P8IN == 0x0E) { // D-PAD UP
+            TA1CCR1 = 2000; // TA1CCR0 value
+            TA1CCTL1 = OUTMOD_7; // mode 7
+            TA1CCR2 = 2000;
+            TA1CCTL2 = OUTMOD_7; // mode 7
+
+            TB0CCR1 = 2000; // TA1CCR1 value
+            TB0CCTL1 = OUTMOD_7; // mode 7
+            TB0CCR2 = 2000; // TA1CCR2 value
+            TB0CCTL2 = OUTMOD_7; // mode 7
+        }
+
+        P1OUT ^= 0x01;
+        //__delay_cycles(250000);
+    }
+
+return 0;
+}
+
+
+//PART B
+#include <msp430.h> 
+
+
+/**
+ * main.c
+ */
+
+unsigned int adc_raw[3]; //set array of size 3 to store ADC values
+
+int main(void)
+{
+    WDTCTL = WDTPW | WDTHOLD;   // stop watchdog timer
+    PM5CTL0 &= ~LOCKLPM5; //clear LOCKPM5 bit
+
+    //motor control
+    P1DIR |= BIT0;
+    P4DIR |= BIT7;
+    P4OUT |= BIT7;
+    P1DIR |= BIT2 | BIT3;
+    P1SEL1 &= ~(BIT2|BIT3);
+    P1SEL0 |= (BIT2|BIT3);
+
+    //timer config
+    TA1CTL = TASSEL_2 | MC_1 | TACLR;
+    TA1CCR0 = 2000;
+
+//    TA1CCR1 = 2000;
+//    TA1CCTL1 = OUTMOD_7;
+//    TA1CCR2 = 2000;
+//    TA1CCTL2 = OUTMOD_7;
+
+    //ADC
+    P1DIR |= 0x01; //set 1.0
+    P4SEL1 |= 0x0E; // alternate for 3, 2, 1
+    P4SEL0 |= 0x0E; // alternate for 3, 2, 1
+    ADC12CTL0 = ADC12SHT0_6|ADC12MSC|ADC12ON; // adc ctl0
+    ADC12CTL1 = ADC12SHP|ADC12CONSEQ_1; //adc ctl1
+    ADC12CTL2 = ADC12RES_2; // 12 bit
+
+    //setup multi channel conversion
+    ADC12MCTL0 = ADC12INCH_9; // first input channel
+    ADC12MCTL1 = ADC12INCH_10; // second input channel
+    ADC12MCTL2 = ADC12INCH_11|ADC12EOS; // third input channel and end of sequence
+
+    int gradient = 0;
+    while(1) {
+
+        // ADC
+        ADC12CTL0 |= ADC12ENC|ADC12SC; //start conversion
+        while((ADC12IFGR0 & BIT2) == 0);
+        adc_raw[0] = ADC12MEM0;
+        adc_raw[1] = ADC12MEM1;
+        adc_raw[2] = ADC12MEM2;
+        __delay_cycles(250000);
+
+    //20 degree threshold,
+    //1.65V is centered
+    //1.46V neg 20 deg
+    //1.83V pos 20 deg
+
+    //from testing, NADC value for -20 deg is 1935 and 20 deg is 2135
+
+    //2035 seems like center
+
+    if (adc_raw[1] < 1965){ //neg Y reverse motor
+//        TA1CCR1 = 2000;
+//        TA1CCR2 = 0;
+        gradient = 7*(2035 - adc_raw[1]);
+        TA1CCR1 = 200 + gradient; // TA1CCR0 value
+        TA1CCTL1 = OUTMOD_7; // mode 7
+        TA1CCR2 = 0;
+        TA1CCTL2 = OUTMOD_7; // mode 7
+    }
+    else if (adc_raw[1] > 2105){//pos Y forward motor
+//        TA1CCR1 = 1000;
+//        TA1CCR2 = 2000;
+        gradient = 7*(adc_raw[1] - 2035);
+        TA1CCR1 = 0; // TA1CCR0 value
+        TA1CCTL1 = OUTMOD_7; // mode 7
+        TA1CCR2 = 200 + gradient;
+        TA1CCTL2 = OUTMOD_7; // mode 7
+    }
+    else{ //dead zone in center
+//        TA1CCR1 = 2000;
+//        TA1CCR2 = 2000;
+        TA1CCR1 = 2000; // TA1CCR0 value
+        TA1CCTL1 = OUTMOD_7; // mode 7
+        TA1CCR2 = 2000;
+        TA1CCTL2 = OUTMOD_7; // mode 7
+
+    }
+    __delay_cycles(25000);
+
+    }
+
+    return 0;
+}
